@@ -312,7 +312,7 @@ export async function login(
 ): Promise<{ success: boolean; session?: Session; error?: string }> {
   if (hasApiBackend()) {
     try {
-      const result = await apiRequest<AuthResponse>('/api/v1/auth/login', {
+      const result = await apiRequest<AuthResponse>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       });
@@ -320,7 +320,17 @@ export async function login(
       persistAuth(session, result.token, remember);
       return { success: true, session };
     } catch (error: any) {
-      return { success: false, error: error?.message || 'Login failed.' };
+      try {
+        const v1Result = await apiRequest<AuthResponse>('/api/v1/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
+        });
+        const session = v1Result.session;
+        persistAuth(session, v1Result.token || (v1Result as any).accessToken, remember);
+        return { success: true, session };
+      } catch (err: any) {
+        return { success: false, error: error?.message || err?.message || 'Login failed.' };
+      }
     }
   }
 

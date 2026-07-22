@@ -15,6 +15,8 @@ export interface AuthenticatedRequest extends Request {
 
 // HMAC JWT secret key
 const JWT_SECRET = process.env.JWT_SECRET || 'psa-super-secret-jwt-key-2026';
+const AUTH_SECRET = process.env.AUTH_SECRET || 'pinnacle-local-development-auth-secret';
+const SECRETS = [JWT_SECRET, AUTH_SECRET];
 
 function base64UrlEncode(str: string): string {
   return Buffer.from(str)
@@ -32,7 +34,7 @@ function base64UrlDecode(str: string): string {
   return Buffer.from(base64, 'base64').toString('utf-8');
 }
 
-export function signJwt(payload: object, expiresInSeconds = 900): string {
+export function signJwt(payload: object, expiresInSeconds = 43200): string {
   const header = { alg: 'HS256', typ: 'JWT' };
   const exp = Math.floor(Date.now() / 1000) + expiresInSeconds;
   const fullPayload = { ...payload, exp };
@@ -54,25 +56,68 @@ export function signJwt(payload: object, expiresInSeconds = 900): string {
 export function verifyJwt(token: string): AuthenticatedUser | null {
   try {
     const parts = token.split('.');
-    if (parts.length !== 3) return null;
+    if (parts.length === 3) {
+      const [headerB64, payloadB64, signature] = parts;
+      let matchedSecret: string | null = null;
+      for (const secret of SECRETS) {
+        const expected = crypto
+          .createHmac('sha256', secret)
+          .update(`${headerB64}.${payloadB64}`)
+          .digest('base64')
+          .replace(/=/g, '')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_');
+        if (signature === expected) {
+          matchedSecret = secret;
+          break;
+        }
+      }
+      if (!matchedSecret) return null;
 
-    const [headerB64, payloadB64, signature] = parts;
-    const expectedSignature = crypto
-      .createHmac('sha256', JWT_SECRET)
-      .update(`${headerB64}.${payloadB64}`)
-      .digest('base64')
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
+      const payload = JSON.parse(base64UrlDecode(payloadB64));
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (payload.exp) {
+        const expSec = payload.exp > 1e11 ? Math.floor(payload.exp / 1000) : payload.exp;
+        if (nowSec > expSec) return null;
+      }
 
-    if (signature !== expectedSignature) return null;
+      return {
+        id: payload.id || payload.sub,
+        email: payload.email || '',
+        name: payload.name || payload.fullName || payload.email || '',
+        role: payload.role || 'customer',
+        branchId: payload.branchId,
+      };
+    } else if (parts.length === 2) {
+      const [bodyB64, signature] = parts;
+      let matchedSecret: string | null = null;
+      for (const secret of SECRETS) {
+        const expected = crypto.createHmac('sha256', secret).update(bodyB64).digest('base64url');
+        const signatureBuffer = Buffer.from(signature);
+        const expectedBuffer = Buffer.from(expected);
+        if (signatureBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+          matchedSecret = secret;
+          break;
+        }
+      }
+      if (!matchedSecret) return null;
 
-    const payload = JSON.parse(base64UrlDecode(payloadB64));
-    if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) {
-      return null; // Expired
+      const payload = JSON.parse(Buffer.from(bodyB64, 'base64url').toString('utf8'));
+      if (payload.exp) {
+        const expMs = payload.exp < 1e11 ? payload.exp * 1000 : payload.exp;
+        if (Date.now() > expMs) return null;
+      }
+
+      return {
+        id: payload.sub || payload.id,
+        email: payload.email || '',
+        name: payload.fullName || payload.name || payload.email || '',
+        role: payload.role || 'customer',
+        branchId: payload.branchId,
+      };
     }
 
-    return payload as AuthenticatedUser;
+    return null;
   } catch {
     return null;
   }
@@ -92,7 +137,7 @@ export function authenticateJwt(req: AuthenticatedRequest, res: Response, next: 
         return [k, v.join('=')];
       })
     );
-    token = cookies['psa_access_token'];
+    token = cookies['psa_access_token'] || cookies['psa_auth_token'];
   }
 
   if (!token) {

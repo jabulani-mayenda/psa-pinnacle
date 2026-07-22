@@ -33,14 +33,15 @@ router.post('/login', async (req, res) => {
       role: user.role,
     };
 
-    const accessToken = signJwt(payload, 900);       // 15 min access token
+    const ttlSeconds = Number(process.env.AUTH_TOKEN_TTL_HOURS || 12) * 3600;
+    const accessToken = signJwt(payload, ttlSeconds);       // 12 hour access token
     const refreshToken = signJwt({ id: user.id }, 604800); // 7 day refresh token
 
     res.cookie('psa_access_token', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge: 900 * 1000,
+      maxAge: ttlSeconds * 1000,
     });
 
     res.cookie('psa_refresh_token', refreshToken, {
@@ -51,7 +52,7 @@ router.post('/login', async (req, res) => {
     });
 
     // Return shape compatible with both new v1 clients and authService.ts
-    const expiresAt = new Date(Date.now() + 900 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
     res.json({
       success: true,
       user: payload,

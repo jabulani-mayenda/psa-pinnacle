@@ -294,21 +294,74 @@ function signAuthToken(user: StoredUser): { token: string; expiresAt: string } {
   return { token: `${body}.${signature}`, expiresAt: new Date(exp).toISOString() };
 }
 
+const jwtSecretKey = process.env.JWT_SECRET || 'psa-super-secret-jwt-key-2026';
+const authSecrets = [authSecret, jwtSecretKey];
+
 function verifyAuthToken(token: string): AuthTokenPayload | null {
-  const [body, signature] = token.split('.');
-  if (!body || !signature) return null;
-
-  const expectedSignature = crypto.createHmac('sha256', authSecret).update(body).digest('base64url');
-  const signatureBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-  if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-    return null;
-  }
-
   try {
-    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as AuthTokenPayload;
-    if (!payload.sub || !payload.exp || payload.exp < Date.now()) return null;
-    return payload;
+    const parts = token.split('.');
+    if (parts.length === 2) {
+      const [body, signature] = parts;
+      let valid = false;
+      for (const s of authSecrets) {
+        const expected = crypto.createHmac('sha256', s).update(body).digest('base64url');
+        const signatureBuffer = Buffer.from(signature);
+        const expectedBuffer = Buffer.from(expected);
+        if (signatureBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+          valid = true;
+          break;
+        }
+      }
+      if (!valid) return null;
+
+      const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+      const sub = payload.sub || payload.id;
+      if (!sub) return null;
+      const expMs = payload.exp ? (payload.exp < 1e11 ? payload.exp * 1000 : payload.exp) : Date.now() + 86400000;
+      if (expMs < Date.now()) return null;
+
+      return {
+        sub,
+        role: payload.role || 'customer',
+        fullName: payload.fullName || payload.name || payload.email || '',
+        email: payload.email || '',
+        iat: payload.iat ? (payload.iat < 1e11 ? payload.iat * 1000 : payload.iat) : Date.now(),
+        exp: expMs,
+      };
+    } else if (parts.length === 3) {
+      const [headerB64, payloadB64, signature] = parts;
+      let valid = false;
+      for (const s of authSecrets) {
+        const expected = crypto
+          .createHmac('sha256', s)
+          .update(`${headerB64}.${payloadB64}`)
+          .digest('base64')
+          .replace(/=/g, '')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_');
+        if (signature === expected) {
+          valid = true;
+          break;
+        }
+      }
+      if (!valid) return null;
+
+      const payload = JSON.parse(Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+      const sub = payload.sub || payload.id;
+      if (!sub) return null;
+      const expMs = payload.exp ? (payload.exp < 1e11 ? payload.exp * 1000 : payload.exp) : Date.now() + 86400000;
+      if (expMs < Date.now()) return null;
+
+      return {
+        sub,
+        role: payload.role || 'customer',
+        fullName: payload.fullName || payload.name || payload.email || '',
+        email: payload.email || '',
+        iat: payload.iat ? (payload.iat < 1e11 ? payload.iat * 1000 : payload.iat) : Date.now(),
+        exp: expMs,
+      };
+    }
+    return null;
   } catch {
     return null;
   }
