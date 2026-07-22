@@ -4,8 +4,12 @@ const API_BASE_URL = ((import.meta as any).env.VITE_API_BASE_URL || '').replace(
 export const PSA_UNAUTHORIZED_EVENT = 'psa:unauthorized';
 
 export function hasApiBackend(): boolean {
+  if ((import.meta as any).env.PROD) {
+    return true;
+  }
   return API_BASE_URL.length > 0;
 }
+
 
 function getStoredValue(key: string): string | null {
   return localStorage.getItem(key) || sessionStorage.getItem(key);

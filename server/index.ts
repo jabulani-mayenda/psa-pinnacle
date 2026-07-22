@@ -1441,6 +1441,19 @@ app.get('/api/health/readiness', async (_req, res) => {
   }
 });
 
+// ── Serve Frontend Static Assets in Production ────────────────────────────────
+const distPath = path.join(process.cwd(), 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  // Fallback to index.html for React Router SPA paths
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+      return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 (async () => {
   await ensureSchema();
   await seedInitialData();
