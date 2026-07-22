@@ -171,7 +171,7 @@ export async function ensureMockSchema(): Promise<void> {
 }
 
 export async function seedMockInitialData(): Promise<void> {
-  const passwordHash = await hashSecret('Admin@1234');
+  const passwordHash = await hashSecret('PINACO@2026');
   const answerHash = await hashSecret('lilongwe');
 
   await writeDb(db => {
