@@ -135,7 +135,26 @@ export const alertsStore = {
 
 // ── Customers ────────────────────────────────────────────────────────────────
 export const customersStore = {
-  getAll: (): Customer[] => getJSON(KEYS.CUSTOMERS, initialCustomers),
+  getAll: (): Customer[] => {
+    const list = getJSON(KEYS.CUSTOMERS, initialCustomers);
+    let modified = false;
+    const migrated = list.map(c => {
+      const match = initialCustomers.find(ic => ic.id === c.id);
+      if (match && (!c.employeeNumber || !c.nationalId)) {
+        modified = true;
+        return {
+          ...c,
+          employeeNumber: c.employeeNumber || match.employeeNumber,
+          nationalId: c.nationalId || match.nationalId,
+        };
+      }
+      return c;
+    });
+    if (modified) {
+      setJSON(KEYS.CUSTOMERS, migrated);
+    }
+    return migrated;
+  },
   save: (customers: Customer[]): void => setJSON(KEYS.CUSTOMERS, customers),
   add: (customer: Customer): void => {
     const current = customersStore.getAll();

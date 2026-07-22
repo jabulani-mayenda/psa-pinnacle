@@ -102,6 +102,7 @@ export interface Customer {
   joinedAt?: string;
   customerType?: 'New' | 'Existing';
   employeeNumber?: string;
+  nationalId?: string;
   isActivated?: boolean;
   dataSource?: 'demo' | 'user' | 'imported';
 }

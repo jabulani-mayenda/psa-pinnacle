@@ -64,7 +64,7 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   });
 
   // Session expired or token revoked — broadcast for AuthContext to handle
-  if (response.status === 401) {
+  if (response.status === 401 && !path.includes('/login') && !path.includes('/register')) {
     window.dispatchEvent(new CustomEvent(PSA_UNAUTHORIZED_EVENT));
     throw new Error('Your session has expired. Please sign in again.');
   }
